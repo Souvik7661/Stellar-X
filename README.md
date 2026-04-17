@@ -4,10 +4,6 @@ Stellar Split is a decentralized expense-splitting application built on the Stel
 
 Designed to win, Stellar Split features a stunning "Neon Galaxy" glassmorphic UI, ensuring a premium user experience while interacting with Web3 technologies.
 
-### 📸 App Screenshots
-![Landing Page](./screenshots/landing_page.png)
-![Connected Dashboard](./screenshots/dashboard.png)
-
 ---
 
 ## 🏗️ System Architecture
@@ -58,6 +54,10 @@ Stellar Split is a fully decentralized dApp relying on a client-side architectur
 - [x] Calculate "who owes whom"
 - [x] Send XLM transaction to settle debt
 - [x] Show transaction status (Success/Failure, Transaction Hash)
+
+**Level 1 Showcase:**
+![Landing Page](./screenshots/landing_page.png)
+![Connected Dashboard](./screenshots/dashboard.png)
 
 ### 🟡 Level 2 (Yellow Belt)
 - [ ] Integrate StellarWalletsKit (multi-wallet support)
