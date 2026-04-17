@@ -1,5 +1,9 @@
 # 🌌 Stellar Split (SplitX)
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://stellar-x-tau.vercel.app/)
+
+> 🚀 **Live App:** [https://stellar-x-tau.vercel.app/](https://stellar-x-tau.vercel.app/)
+
 Stellar Split is a decentralized expense-splitting application built on the Stellar blockchain. It allows users to track shared expenses, calculate who owes whom, and settle debts seamlessly using XLM and Freighter.
 
 Designed to win, Stellar Split features a stunning "Neon Galaxy" glassmorphic UI, ensuring a premium user experience while interacting with Web3 technologies.
