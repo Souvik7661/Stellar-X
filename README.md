@@ -4,8 +4,9 @@ Stellar Split is a decentralized expense-splitting application built on the Stel
 
 Designed to win, Stellar Split features a stunning "Neon Galaxy" glassmorphic UI, ensuring a premium user experience while interacting with Web3 technologies.
 
-### 🎥 Live Demo
-![Stellar Split Demo](./demo.webp)
+### 📸 App Screenshots
+![Landing Page](./landing_page.png)
+![Connected Dashboard](./dashboard.png)
 
 ---
 
