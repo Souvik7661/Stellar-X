@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { checkConnection, retrievePublicKey, fetchBalance } from './utils/stellar';
+import { checkConnection, retrievePublicKey, fetchBalance, submitPaymentTransaction } from './utils/stellar';
 import { calculateDebts } from './utils/splitEngine';
-import { Wallet, LogOut, Send, Plus, Layout, Zap, Cpu, X, User, ArrowRight } from 'lucide-react';
+import { Wallet, LogOut, Send, Plus, Layout, Zap, Cpu, X, User, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
 
 function App() {
   const [pubKey, setPubKey] = useState('');
@@ -14,6 +14,10 @@ function App() {
   const [expenses, setExpenses] = useState([]);
   const [debts, setDebts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Transaction State
+  const [settlingDebtId, setSettlingDebtId] = useState(null);
+  const [txStatus, setTxStatus] = useState({ show: false, success: false, hash: '', message: '' });
 
   // Form State
   const [expenseDesc, setExpenseDesc] = useState('');
@@ -104,11 +108,59 @@ function App() {
     setParticipantsInput('');
   };
 
+  const handleSettleDebt = async (debt, idx) => {
+    setSettlingDebtId(idx);
+    setTxStatus({ show: false, success: false, hash: '', message: '' });
+
+    const result = await submitPaymentTransaction(pubKey, debt.creditor, debt.amount);
+    
+    if (result.success) {
+      setTxStatus({
+        show: true,
+        success: true,
+        hash: result.hash,
+        message: 'Debt Settled Successfully!'
+      });
+      loadBalance(pubKey);
+      
+      // Optimistically remove settled debt
+      const newDebts = [...debts];
+      newDebts.splice(idx, 1);
+      setDebts(newDebts);
+    } else {
+      setTxStatus({
+        show: true,
+        success: false,
+        hash: '',
+        message: result.error || 'Transaction failed.'
+      });
+    }
+    setSettlingDebtId(null);
+  };
+
   const shortKey = (key) => key ? `${key.slice(0, 5)}...${key.slice(-4)}` : '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#000428] to-[#004e92] text-white flex flex-col items-center p-6 relative font-sans overflow-x-hidden">
       
+      {/* Toast Notification */}
+      {txStatus.show && (
+        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl animate-fade-in-up ${txStatus.success ? 'bg-neon-cyan/10 border-neon-cyan/30 text-white' : 'bg-red-500/10 border-red-500/30 text-white'}`}>
+          {txStatus.success ? <CheckCircle2 size={24} className="text-neon-cyan" /> : <AlertCircle size={24} className="text-red-400" />}
+          <div>
+            <h4 className="font-bold text-sm">{txStatus.message}</h4>
+            {txStatus.hash && (
+              <a href={`https://stellar.expert/explorer/testnet/tx/${txStatus.hash}`} target="_blank" rel="noreferrer" className="text-xs text-neon-cyan hover:underline mt-1 block">
+                View on Stellar Expert
+              </a>
+            )}
+          </div>
+          <button onClick={() => setTxStatus({ ...txStatus, show: false })} className="ml-4 text-white/50 hover:text-white">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Animated Glowing Orbs Background */}
       <div className="absolute top-0 -left-40 w-96 h-96 bg-neon-cyan/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob pointer-events-none fixed"></div>
       <div className="absolute top-0 -right-40 w-96 h-96 bg-neon-pink/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-2000 pointer-events-none fixed"></div>
@@ -245,8 +297,12 @@ function App() {
                             {debt.amount} XLM
                           </span>
                           {isYouDebtor && (
-                            <button className="bg-neon-pink/20 hover:bg-neon-pink/40 text-neon-pink px-4 py-2 rounded-xl text-xs font-bold tracking-wide transition-colors border border-neon-pink/30">
-                              SETTLE
+                            <button 
+                              onClick={() => handleSettleDebt(debt, idx)}
+                              disabled={settlingDebtId === idx}
+                              className="bg-neon-pink/20 hover:bg-neon-pink/40 text-neon-pink px-4 py-2 rounded-xl text-xs font-bold tracking-wide transition-colors border border-neon-pink/30 disabled:opacity-50"
+                            >
+                              {settlingDebtId === idx ? 'SETTLING...' : 'SETTLE'}
                             </button>
                           )}
                         </div>

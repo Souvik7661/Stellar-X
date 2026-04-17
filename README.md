@@ -5,8 +5,8 @@ Stellar Split is a decentralized expense-splitting application built on the Stel
 Designed to win, Stellar Split features a stunning "Neon Galaxy" glassmorphic UI, ensuring a premium user experience while interacting with Web3 technologies.
 
 ### 📸 App Screenshots
-![Landing Page](./landing_page.png)
-![Connected Dashboard](./dashboard.png)
+![Landing Page](/Users/souvikkundu/.gemini/antigravity/brain/08dec005-783c-4b25-b903-37f5d4f3aa34/landing_page_unconnected_1776459544450.png)
+![Connected Dashboard](/Users/souvikkundu/.gemini/antigravity/brain/08dec005-783c-4b25-b903-37f5d4f3aa34/connected_dashboard_balance_1776459558962.png)
 
 ---
 
@@ -54,10 +54,10 @@ Stellar Split is a fully decentralized dApp relying on a client-side architectur
 ### ⚪️ Level 1 (White Belt) - Current Focus
 - [x] Freighter wallet connect & disconnect
 - [x] Fetch and display XLM balance
-- [ ] Add expense (amount + participants or manual input)
-- [ ] Calculate "who owes whom"
-- [ ] Send XLM transaction to settle debt
-- [ ] Show transaction status (Success/Failure, Transaction Hash)
+- [x] Add expense (amount + participants or manual input)
+- [x] Calculate "who owes whom"
+- [x] Send XLM transaction to settle debt
+- [x] Show transaction status (Success/Failure, Transaction Hash)
 
 ### 🟡 Level 2 (Yellow Belt)
 - [ ] Integrate StellarWalletsKit (multi-wallet support)
