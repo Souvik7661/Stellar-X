@@ -2,7 +2,7 @@
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://stellar-x-tau.vercel.app/)
 ![Green Belt](https://img.shields.io/badge/Level-Green%20Belt%20🟢-green?style=for-the-badge)
-![CI/CD](https://img.shields.io/badge/CI%2FCD-Passing-success?style=for-the-badge&logo=githubactions)
+[![Stellar CI/CD](https://github.com/Souvik7661/Stellar-X/actions/workflows/stellar-ci.yml/badge.svg)](https://github.com/Souvik7661/Stellar-X/actions/workflows/stellar-ci.yml)
 ![Stellar](https://img.shields.io/badge/Stellar-Testnet-blue?style=for-the-badge&logo=stellar)
 
 > 🚀 **Live App:** [https://stellar-x-tau.vercel.app/](https://stellar-x-tau.vercel.app/)
@@ -264,8 +264,10 @@ fn get_total_paid(env, address: Address) -> i128
 ## 🟢 Green Belt Deliverables
 
 ### CI/CD Pipeline
+[![Stellar CI/CD](https://github.com/Souvik7661/Stellar-X/actions/workflows/stellar-ci.yml/badge.svg)](https://github.com/Souvik7661/Stellar-X/actions/workflows/stellar-ci.yml)
+
 > GitHub Actions automatically runs `npm test` and `cargo test/build` on every push to main.
-> See the `.github/workflows/stellar-ci.yml` file and the passing badge at the top of the README!
+> See the `.github/workflows/stellar-ci.yml` file!
 
 ### Mobile Responsive View
 ![Mobile View Placeholder](./public/mobile_view.png)
