@@ -27,19 +27,15 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 
 ## 📸 Screenshots
 
-### Wallet Selection
+### Landing Page / Wallet Selection
 > Multi-wallet support — Freighter, xBull, Lobstr, and Albedo available on connect.
 
-![Wallet Options](./public/screenshot-wallets.png)
+![Landing Page](./screenshots/landing_page.png)
 
-*(Screenshot: wallet picker showing all 4 supported wallet options)*
+### Dashboard / Expense Splitting
+> Main dashboard showing balance, pending payments, and real-time event feed.
 
-### Transaction Status Tracking
-> Real-time status tracking for contract calls and XLM payments.
-
-![Transaction Status](./public/screenshot-transaction.png)
-
-*(Screenshot: 3-step transaction stepper showing Pending → Submitted → Confirmed)*
+![Dashboard](./screenshots/dashboard.png)
 
 ---
 
@@ -52,16 +48,12 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 | **Explorer** | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/YOUR_CONTRACT_ID_HERE) |
 
 ### Sample Transaction Hash
-> A verified transaction settling debt on the Horizon network:
+> A verified `add_expense` contract call:
 
 ```
-07b5a88e7a02c9a936a2cd821a733e8b0b8c66e74b3d395ec1fb02d410d11a76
+YOUR_TX_HASH_HERE
 ```
-[View on Stellar Expert →](https://stellar.expert/explorer/testnet/tx/07b5a88e7a02c9a936a2cd821a733e8b0b8c66e74b3d395ec1fb02d410d11a76)
-
-![Transaction Explorer](./public/screenshot-explorer.png)
-
-*(Screenshot: Stellar Expert showing the successful settlement transaction)*
+[View on Stellar Expert →](https://stellar.expert/explorer/testnet/tx/YOUR_TX_HASH_HERE)
 
 ---
 
