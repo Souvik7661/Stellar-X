@@ -1,308 +1,411 @@
-import React, { useState, useEffect } from 'react';
-import { checkConnection, retrievePublicKey, fetchBalance, submitPaymentTransaction } from './utils/stellar';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Wallet, LogOut, Send, Plus, Layout, Zap, Cpu, X, User,
+  ArrowRight, CheckCircle2, AlertCircle, Activity, WifiOff,
+  ShieldX, AlertTriangle, Clock, Radio, Layers, ChevronRight,
+  RefreshCw, Globe,
+} from 'lucide-react';
+
+import { connectWallet, signXDR, ERROR_TYPES, SUPPORTED_WALLETS } from './utils/walletKit';
+import { fetchBalance, buildPaymentXDR, submitSignedXDR } from './utils/stellar';
 import { calculateDebts } from './utils/splitEngine';
-import { Wallet, LogOut, Send, Plus, Layout, Zap, Cpu, X, User, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  addExpenseOnChain,
+  settleDebtOnChain,
+  fetchContractEvents,
+  pollTxResult,
+  CONTRACT_ID,
+} from './utils/contractClient';
 
-function App() {
-  const [pubKey, setPubKey] = useState('');
-  const [balance, setBalance] = useState('');
+// ─── Constants ───────────────────────────────────────────────────────────────
+const ERROR_CONFIG = {
+  [ERROR_TYPES.WALLET_NOT_FOUND]: {
+    Icon: WifiOff, color: '#ff8c42', bg: 'rgba(255,140,66,0.12)',
+    border: 'rgba(255,140,66,0.35)', label: 'Wallet Not Found',
+  },
+  [ERROR_TYPES.USER_REJECTED]: {
+    Icon: ShieldX, color: '#f5d020', bg: 'rgba(245,208,32,0.10)',
+    border: 'rgba(245,208,32,0.35)', label: 'Request Rejected',
+  },
+  [ERROR_TYPES.INSUFFICIENT_BALANCE]: {
+    Icon: AlertTriangle, color: '#ff4d6d', bg: 'rgba(255,77,109,0.10)',
+    border: 'rgba(255,77,109,0.35)', label: 'Insufficient Balance',
+  },
+  [ERROR_TYPES.NETWORK_MISMATCH]: {
+    Icon: Globe, color: '#f5a623', bg: 'rgba(245,166,35,0.12)',
+    border: 'rgba(245,166,35,0.45)', label: 'Wrong Network',
+  },
+  [ERROR_TYPES.UNKNOWN]: {
+    Icon: AlertCircle, color: '#ff4d6d', bg: 'rgba(255,77,109,0.10)',
+    border: 'rgba(255,77,109,0.35)', label: 'Error',
+  },
+};
+
+const TX_STEPS = ['Pending', 'Submitted', 'Confirmed'];
+const stepIndex = { idle: -1, pending: 0, submitted: 1, confirmed: 2, failed: 1 };
+
+const isContractLive = CONTRACT_ID !== 'YOUR_CONTRACT_ID_HERE';
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+export default function App() {
+  // Wallet
+  const [pubKey, setPubKey]           = useState('');
+  const [balance, setBalance]         = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [activeWallet, setActiveWallet] = useState(null);
+  const [isLoading, setIsLoading]     = useState(false);
 
-  // App State
-  const [expenses, setExpenses] = useState([]);
-  const [debts, setDebts] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  // Transaction State
-  const [settlingDebtId, setSettlingDebtId] = useState(null);
-  const [txStatus, setTxStatus] = useState({ show: false, success: false, hash: '', message: '' });
+  // Modals
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
 
-  // Form State
-  const [expenseDesc, setExpenseDesc] = useState('');
-  const [expenseAmt, setExpenseAmt] = useState('');
-  const [participantsInput, setParticipantsInput] = useState('');
+  // Errors
+  const [walletError, setWalletError] = useState(null); // { type, message }
 
-  useEffect(() => {
-    const initConnection = async () => {
-      const connected = await checkConnection();
-      if (connected) {
-        const { publicKey } = await retrievePublicKey();
-        if (publicKey) {
-          setPubKey(publicKey);
-          setIsConnected(true);
-          loadBalance(publicKey);
-        }
-      }
-    };
-    initConnection();
-  }, []);
+  // TX Status  — step: 'idle' | 'pending' | 'submitted' | 'confirmed' | 'failed'
+  const [txStatus, setTxStatus] = useState({ step: 'idle', hash: '', message: '' });
+
+  // App data
+  const [expenses, setExpenses]   = useState([]);
+  const [debts, setDebts]         = useState([]);
+  const [settlingIdx, setSettlingIdx] = useState(null);
+
+  // Live events
+  const [liveEvents, setLiveEvents] = useState([]);
+  const pollRef = useRef(null);
+  const lastLedgerRef = useRef(null);
+
+  // Form
+  const [expenseDesc, setExpenseDesc]   = useState('');
+  const [expenseAmt, setExpenseAmt]     = useState('');
+  const [participantCount, setParticipantCount] = useState(2);
+  const [receiverAddresses, setReceiverAddresses] = useState(['']);
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+  const short = (k) => k ? `${k.slice(0, 5)}…${k.slice(-4)}` : '';
+
+  const pushEvent = (type, meta) =>
+    setLiveEvents((prev) =>
+      [{ id: Date.now(), type, meta, time: new Date().toLocaleTimeString() }, ...prev].slice(0, 12)
+    );
 
   const loadBalance = async (key) => {
     setIsLoading(true);
-    const bal = await fetchBalance(key);
-    setBalance(bal);
+    setBalance(await fetchBalance(key));
     setIsLoading(false);
   };
 
-  const handleConnect = async () => {
-    setError('');
+  // ─── Event polling ─────────────────────────────────────────────────────────
+  const startPolling = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      if (!isContractLive) return;
+      const events = await fetchContractEvents(lastLedgerRef.current);
+      events.forEach((ev) => {
+        if (ev.ledger > (lastLedgerRef.current || 0)) lastLedgerRef.current = ev.ledger;
+        pushEvent(ev.type, ev);
+      });
+    }, 10_000);
+  }, []);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  // ─── Connect wallet ────────────────────────────────────────────────────────
+  const handleConnect = async (walletId) => {
+    setWalletError(null);
     try {
-      const { publicKey, error } = await retrievePublicKey();
-      if (publicKey) {
-        setPubKey(publicKey);
-        setIsConnected(true);
-        loadBalance(publicKey);
-      } else if (error) {
-        const fallbackKey = 'GDTUW76346V3YWOM7KZESLEU46HCNT6VU6DZ53D7U4L5UMSHWG6FSCYC';
-        setPubKey(fallbackKey);
-        setIsConnected(true);
-        loadBalance(fallbackKey);
-      }
-    } catch (e) {
-      const fallbackKey = 'GDTUW76346V3YWOM7KZESLEU46HCNT6VU6DZ53D7U4L5UMSHWG6FSCYC';
-      setPubKey(fallbackKey);
+      const { address } = await connectWallet(walletId);
+      setPubKey(address);
       setIsConnected(true);
-      loadBalance(fallbackKey);
+      setActiveWallet(SUPPORTED_WALLETS.find((w) => w.id === walletId));
+      setWalletModalOpen(false);
+      loadBalance(address);
+      startPolling();
+    } catch (err) {
+      setWalletError(err);
     }
   };
 
+  // ─── Disconnect ────────────────────────────────────────────────────────────
   const handleDisconnect = () => {
-    setPubKey('');
-    setBalance('');
-    setIsConnected(false);
-    setExpenses([]);
-    setDebts([]);
+    setPubKey(''); setBalance(''); setIsConnected(false); setActiveWallet(null);
+    setExpenses([]); setDebts([]); setLiveEvents([]);
+    setWalletError(null); setTxStatus({ step: 'idle', hash: '', message: '' });
+    if (pollRef.current) clearInterval(pollRef.current);
   };
 
-  const handleAddExpense = (e) => {
+  // ─── Add expense ───────────────────────────────────────────────────────────
+  const handleAddExpense = async (e) => {
     e.preventDefault();
-    if (!expenseDesc || !expenseAmt || !participantsInput) return;
-
-    let parts = participantsInput.split(',').map(p => p.trim()).filter(p => p);
-    
-    // Ensure payer is included in the split by default if not already
-    if (!parts.includes(pubKey)) {
-      parts.push(pubKey);
-    }
-
-    const newExpense = {
-      id: Date.now().toString(),
-      description: expenseDesc,
-      amount: parseFloat(expenseAmt),
-      payer: pubKey, // Current user is assumed payer for Level 1
-      participants: parts
+    setWalletError(null);
+    const parts = [...new Set([
+      ...receiverAddresses.filter(Boolean),
+      pubKey,
+    ])];
+    const expenseId = `exp_${Date.now()}`;
+    const newExp = {
+      id: expenseId, description: expenseDesc,
+      amount: parseFloat(expenseAmt), payer: pubKey,
+      participants: parts, onChain: false,
     };
+    const updated = [...expenses, newExp];
+    setExpenses(updated);
+    setDebts(calculateDebts(updated));
+    setExpenseModalOpen(false);
+    setExpenseDesc(''); setExpenseAmt(''); setParticipantCount(2); setReceiverAddresses(['']);
 
-    const updatedExpenses = [...expenses, newExpense];
-    setExpenses(updatedExpenses);
-    
-    // Recalculate all debts based on expense history
-    const calculatedDebts = calculateDebts(updatedExpenses);
-    setDebts(calculatedDebts);
-
-    setIsModalOpen(false);
-    setExpenseDesc('');
-    setExpenseAmt('');
-    setParticipantsInput('');
-  };
-
-  const handleSettleDebt = async (debt, idx) => {
-    setSettlingDebtId(idx);
-    setTxStatus({ show: false, success: false, hash: '', message: '' });
-
-    const result = await submitPaymentTransaction(pubKey, debt.creditor, debt.amount);
-    
-    if (result.success) {
-      setTxStatus({
-        show: true,
-        success: true,
-        hash: result.hash,
-        message: 'Debt Settled Successfully!'
-      });
-      loadBalance(pubKey);
-      
-      // Optimistically remove settled debt
-      const newDebts = [...debts];
-      newDebts.splice(idx, 1);
-      setDebts(newDebts);
-    } else {
-      setTxStatus({
-        show: true,
-        success: false,
-        hash: '',
-        message: result.error || 'Transaction failed.'
-      });
+    // Store on-chain if contract is deployed
+    if (isContractLive) {
+      try {
+        setTxStatus({ step: 'pending', hash: '', message: `Storing "${newExp.description}" on-chain…` });
+        const res = await addExpenseOnChain(pubKey, expenseId, newExp.amount, parts.length);
+        if (res?.hash) {
+          setTxStatus({ step: 'submitted', hash: res.hash, message: 'Expense submitted to contract!' });
+          pushEvent('expense_added', { desc: newExp.description, amount: newExp.amount });
+          const poll = await pollTxResult(res.hash);
+          setTxStatus({ step: poll.status === 'confirmed' ? 'confirmed' : 'failed', hash: res.hash, message: poll.status === 'confirmed' ? 'Expense stored on-chain ✓' : 'Contract call failed.' });
+          if (poll.status === 'confirmed') {
+            setExpenses((prev) => prev.map((x) => x.id === expenseId ? { ...x, onChain: true } : x));
+          }
+          setTimeout(() => setTxStatus({ step: 'idle', hash: '', message: '' }), 6000);
+        }
+      } catch (err) {
+        setWalletError(err.type ? err : { type: ERROR_TYPES.UNKNOWN, message: err.message });
+        setTxStatus({ step: 'failed', hash: '', message: 'Contract call rejected.' });
+        setTimeout(() => setTxStatus({ step: 'idle', hash: '', message: '' }), 5000);
+      }
     }
-    setSettlingDebtId(null);
   };
 
-  const shortKey = (key) => key ? `${key.slice(0, 5)}...${key.slice(-4)}` : '';
+  // ─── Settle debt ───────────────────────────────────────────────────────────
+  const handleSettle = async (debt, idx) => {
+    setWalletError(null);
+
+    // ① Insufficient balance check
+    const bal = parseFloat(balance);
+    if (!isNaN(bal) && bal < debt.amount + 0.5) {
+      setWalletError({
+        type: ERROR_TYPES.INSUFFICIENT_BALANCE,
+        message: `Need ${debt.amount} XLM + fees but wallet has ${balance} XLM.`,
+      });
+      return;
+    }
+
+    setSettlingIdx(idx);
+    setTxStatus({ step: 'pending', hash: '', message: `Settling ${debt.amount} XLM…` });
+
+    try {
+      // Build unsigned XDR
+      const xdr = await buildPaymentXDR(pubKey, debt.creditor, debt.amount);
+
+      // ② Sign via wallet kit — may throw USER_REJECTED
+      const signedXdr = await signXDR(xdr, pubKey);
+
+      // Submit to Horizon
+      const result = await submitSignedXDR(signedXdr);
+
+      if (!result.success) {
+        const msg = (result.error || '').toLowerCase();
+        if (msg.includes('insufficient') || msg.includes('underfunded')) {
+          throw { type: ERROR_TYPES.INSUFFICIENT_BALANCE, message: result.error };
+        }
+        throw { type: ERROR_TYPES.UNKNOWN, message: result.error };
+      }
+
+      setTxStatus({ step: 'submitted', hash: result.hash, message: 'Payment submitted!' });
+      pushEvent('debt_settled', { from: pubKey, to: debt.creditor, amount: debt.amount });
+
+      // Optimistically remove debt
+      setDebts((prev) => prev.filter((_, i) => i !== idx));
+      loadBalance(pubKey);
+
+      // Poll horizon for confirmation
+      let attempts = 0;
+      const confirm = setInterval(async () => {
+        if (++attempts > 20) { clearInterval(confirm); return; }
+        try {
+          const { server } = await import('./utils/stellar');
+          await server.transactions().transaction(result.hash).call();
+          clearInterval(confirm);
+          setTxStatus({ step: 'confirmed', hash: result.hash, message: 'Settlement confirmed! ✓' });
+          setTimeout(() => setTxStatus({ step: 'idle', hash: '', message: '' }), 7000);
+        } catch (_) { /* not yet */ }
+      }, 3000);
+
+      // Also record on contract (non-critical)
+      if (isContractLive) {
+        settleDebtOnChain(pubKey, debt.creditor, 'settle', debt.amount).catch(() => {});
+      }
+
+    } catch (err) {
+      const categorised = err.type ? err : { type: ERROR_TYPES.UNKNOWN, message: err.message };
+      setWalletError(categorised);
+      setTxStatus({ step: 'failed', hash: '', message: categorised.message });
+      setTimeout(() => setTxStatus({ step: 'idle', hash: '', message: '' }), 5000);
+    }
+
+    setSettlingIdx(null);
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  const currentErrCfg = walletError ? ERROR_CONFIG[walletError.type] || ERROR_CONFIG[ERROR_TYPES.UNKNOWN] : null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#000428] to-[#004e92] text-white flex flex-col items-center p-6 relative font-sans overflow-x-hidden">
-      
-      {/* Toast Notification */}
-      {txStatus.show && (
-        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl animate-fade-in-up ${txStatus.success ? 'bg-neon-cyan/10 border-neon-cyan/30 text-white' : 'bg-red-500/10 border-red-500/30 text-white'}`}>
-          {txStatus.success ? <CheckCircle2 size={24} className="text-neon-cyan" /> : <AlertCircle size={24} className="text-red-400" />}
+    <div className="app-root">
+      {/* Ambient orbs */}
+      <div className="orb orb-cyan" />
+      <div className="orb orb-pink" />
+      <div className="orb orb-purple" />
+
+      <div className="main-wrap">
+
+        {/* ── Header ───────────────────────────────────────────────────── */}
+        <header className="app-header">
+          <div className="header-logo">
+            <Layout size={22} />
+          </div>
           <div>
-            <h4 className="font-bold text-sm">{txStatus.message}</h4>
-            {txStatus.hash && (
-              <a href={`https://stellar.expert/explorer/testnet/tx/${txStatus.hash}`} target="_blank" rel="noreferrer" className="text-xs text-neon-cyan hover:underline mt-1 block">
-                View on Stellar Expert
-              </a>
-            )}
+            <h1 className="header-title">STELLAR SPLIT</h1>
           </div>
-          <button onClick={() => setTxStatus({ ...txStatus, show: false })} className="ml-4 text-white/50 hover:text-white">
-            <X size={16} />
-          </button>
-        </div>
-      )}
+          {isConnected && activeWallet && (
+            <div className="header-wallet-chip">
+              <span>{activeWallet.emoji}</span>
+              <span>{activeWallet.name}</span>
+            </div>
+          )}
+        </header>
 
-      {/* Animated Glowing Orbs Background */}
-      <div className="absolute top-0 -left-40 w-96 h-96 bg-neon-cyan/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob pointer-events-none fixed"></div>
-      <div className="absolute top-0 -right-40 w-96 h-96 bg-neon-pink/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-2000 pointer-events-none fixed"></div>
-      <div className="absolute -bottom-40 left-1/2 -translate-x-1/2 w-96 h-96 bg-neon-purple/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-4000 pointer-events-none fixed"></div>
-
-      {/* Main Content Container */}
-      <div className="z-10 flex flex-col items-center w-full max-w-xl mt-10">
-        
-        {/* Futuristic Header */}
-        <div className="flex items-center gap-4 mb-10">
-          <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20 shadow-[0_0_15px_rgba(255,255,255,0.2)]">
-            <Layout size={24} className="text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
-          </div>
-          <h1 className="font-extrabold text-3xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white to-white/60">
-            STELLAR SPLIT
-          </h1>
-        </div>
-
-        {error && (
-          <div className="w-full mb-6 bg-red-500/20 backdrop-blur-md text-red-200 border border-red-500/30 px-6 py-4 rounded-2xl text-sm shadow-[0_0_20px_rgba(239,68,68,0.3)] text-center">
-            {error}
+        {/* ── Error Banner ─────────────────────────────────────────────── */}
+        {walletError && currentErrCfg && (
+          <div className="error-banner" style={{ background: currentErrCfg.bg, borderColor: currentErrCfg.border }}>
+            <currentErrCfg.Icon size={18} style={{ color: currentErrCfg.color, flexShrink: 0 }} />
+            <div className="error-banner-body">
+              <span className="error-banner-label" style={{ color: currentErrCfg.color }}>{currentErrCfg.label}</span>
+              <span className="error-banner-msg">{walletError.message}</span>
+            </div>
+            <button className="error-banner-close" onClick={() => setWalletError(null)}>
+              <X size={14} />
+            </button>
           </div>
         )}
 
-        {!isConnected ? (
-          /* ================= UNCONNECTED STATE ================= */
-          <div className="glassmorphism rounded-[40px] p-12 w-full text-center flex flex-col items-center transform transition-all hover:scale-[1.01] duration-500">
-            <div className="relative mb-8">
-               <div className="absolute inset-0 bg-neon-cyan/50 blur-xl rounded-full"></div>
-               <div className="w-24 h-24 rounded-full bg-white/5 border border-white/20 backdrop-blur-md flex items-center justify-center text-white relative z-10">
-                 <Cpu size={40} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
-               </div>
+        {/* ── TX Status Stepper ─────────────────────────────────────────── */}
+        {txStatus.step !== 'idle' && (
+          <div className={`tx-stepper ${txStatus.step === 'failed' ? 'tx-stepper-fail' : ''}`}>
+            <div className="tx-stepper-steps">
+              {TX_STEPS.map((label, i) => {
+                const current = stepIndex[txStatus.step];
+                const done = i < current || txStatus.step === 'confirmed';
+                const active = i === current && txStatus.step !== 'confirmed';
+                return (
+                  <React.Fragment key={label}>
+                    <div className={`tx-step ${done ? 'done' : ''} ${active ? 'active' : ''} ${txStatus.step === 'failed' && i === 1 ? 'failed' : ''}`}>
+                      <div className="tx-step-dot">
+                        {done ? <CheckCircle2 size={14} /> : active ? <Clock size={12} className="spin" /> : <span>{i + 1}</span>}
+                      </div>
+                      <span>{label}</span>
+                    </div>
+                    {i < TX_STEPS.length - 1 && <div className={`tx-step-line ${done ? 'done' : ''}`} />}
+                  </React.Fragment>
+                );
+              })}
             </div>
-            
-            <h2 className="text-3xl font-bold mb-4 tracking-tight">Sync Your Vault</h2>
-            <p className="text-white/60 text-sm mb-10 px-4 leading-relaxed font-light">
-              Authenticate with your Freighter wallet to securely access the Stellar network and seamlessly manage decentralized expenses.
-            </p>
-            
-            <button 
-              onClick={handleConnect}
-              className="group relative w-full overflow-hidden rounded-2xl p-[1px] transition-all hover:scale-[1.02] active:scale-95"
-            >
-              <span className="absolute inset-0 bg-gradient-to-r from-neon-cyan via-neon-purple to-neon-pink opacity-70 group-hover:opacity-100 transition-opacity duration-300"></span>
-              <div className="relative flex items-center justify-center gap-3 bg-[#030308]/80 backdrop-blur-sm px-8 py-4 rounded-2xl">
-                <Wallet size={20} className="text-neon-cyan group-hover:text-white transition-colors" />
-                <span className="font-semibold text-white tracking-wide">CONNECT FREIGHTER</span>
-                <Zap size={16} className="text-neon-pink group-hover:text-white transition-colors" />
-              </div>
-            </button>
+            <p className="tx-stepper-msg">{txStatus.message}</p>
+            {txStatus.hash && (
+              <a className="tx-stepper-link" href={`https://stellar.expert/explorer/testnet/tx/${txStatus.hash}`} target="_blank" rel="noreferrer">
+                View on Stellar Expert →
+              </a>
+            )}
           </div>
-        ) : (
-          /* ================= CONNECTED STATE ================= */
-          <div className="w-full flex flex-col gap-6 animate-fade-in-up pb-20">
-            
-            {/* Ultra-Premium "Black Card" Balance */}
-            <div className="mesh-gradient rounded-[40px] p-10 relative overflow-hidden shadow-[0_20px_50px_rgba(65,88,208,0.4)] border border-white/20 w-full transform transition-transform hover:scale-[1.02] duration-500">
-              <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/30 to-transparent opacity-50 pointer-events-none"></div>
-              
-              <div className="relative z-10">
-                <div className="flex justify-between items-start mb-12">
-                   <div>
-                     <p className="text-white/80 text-sm font-medium mb-2 uppercase tracking-widest flex items-center gap-2">
-                       <Zap size={14} className="text-white" /> Live Balance
-                     </p>
-                     <h1 className="text-6xl font-black text-white tracking-tighter drop-shadow-md">
-                       {isLoading ? '...' : balance} <span className="text-2xl font-semibold opacity-80 tracking-normal">XLM</span>
-                     </h1>
-                   </div>
-                </div>
+        )}
 
-                <div className="flex justify-between items-end">
-                   <div className="flex flex-col">
-                      <span className="text-white/60 text-xs uppercase tracking-widest mb-1">Authenticated Key</span>
-                      <span className="font-mono text-lg font-medium text-white drop-shadow-sm bg-black/20 px-4 py-2 rounded-xl backdrop-blur-md border border-white/10">
-                        {shortKey(pubKey)}
-                      </span>
-                   </div>
-                   
-                   <div className="w-12 h-10 rounded-md border border-white/30 flex items-center justify-center overflow-hidden opacity-80">
-                      <div className="w-full h-[1px] bg-white/30 absolute"></div>
-                      <div className="w-[1px] h-full bg-white/30 absolute"></div>
-                      <div className="w-6 h-6 rounded-full border border-white/30"></div>
-                   </div>
+        {/* ── NOT CONNECTED ─────────────────────────────────────────────── */}
+        {!isConnected ? (
+          <div className="card card-welcome">
+            <div className="welcome-orb-wrap">
+              <div className="welcome-orb-glow" />
+              <div className="welcome-orb-icon"><Cpu size={42} /></div>
+            </div>
+            <h2 className="welcome-title">Sync Your Vault</h2>
+            <p className="welcome-sub">
+              Connect a Stellar wallet to start splitting expenses on-chain with real-time event tracking.
+            </p>
+            <div className="wallet-grid">
+              {SUPPORTED_WALLETS.map((w) => (
+                <button key={w.id} className="wallet-option-btn" onClick={() => handleConnect(w.id)}>
+                  <span className="wallet-emoji">{w.emoji}</span>
+                  <span className="wallet-name">{w.name}</span>
+                  <span className="wallet-desc">{w.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+        ) : (
+          /* ── CONNECTED ─────────────────────────────────────────────── */
+          <div className="dashboard">
+
+            {/* Balance card */}
+            <div className="balance-card">
+              <div className="balance-card-inner">
+                <div>
+                  <p className="balance-label"><Zap size={12} /> Live Balance</p>
+                  <div className="balance-amount">
+                    {isLoading ? <RefreshCw size={28} className="spin" /> : balance}
+                    <span className="balance-unit">XLM</span>
+                  </div>
+                </div>
+                <div className="balance-meta">
+                  <span className="balance-key-label">Authenticated Key</span>
+                  <code className="balance-key">{short(pubKey)}</code>
+                  {activeWallet && <span className="balance-wallet-badge">{activeWallet.emoji} {activeWallet.name}</span>}
                 </div>
               </div>
+              {isContractLive && (
+                <div className="contract-pill">
+                  <Layers size={12} /> Contract Live
+                </div>
+              )}
             </div>
 
-            {/* Premium Action Buttons */}
-            <div className="grid grid-cols-2 gap-4">
-              <button 
-                onClick={() => setIsModalOpen(true)}
-                className="glassmorphism hover:bg-white/10 text-white py-5 rounded-3xl transition-all duration-300 flex flex-col items-center justify-center gap-3 group hover:border-neon-cyan/50 hover:shadow-[0_0_20px_rgba(0,242,254,0.2)]"
-              >
-                <div className="w-10 h-10 rounded-full bg-neon-cyan/20 flex items-center justify-center text-neon-cyan group-hover:scale-110 transition-transform">
-                  <Plus size={18} />
-                </div>
-                <span className="font-medium text-sm tracking-wide">ADD EXPENSE</span>
+            {/* Action buttons */}
+            <div className="action-row">
+              <button className="action-btn action-btn-cyan" onClick={() => setExpenseModalOpen(true)}>
+                <div className="action-btn-icon"><Plus size={18} /></div>
+                <span>DISTRIBUTE PAYMENT</span>
               </button>
-              
-              <button className="glassmorphism hover:bg-white/10 text-white py-5 rounded-3xl transition-all duration-300 flex flex-col items-center justify-center gap-3 group hover:border-neon-pink/50 hover:shadow-[0_0_20px_rgba(240,147,251,0.2)]">
-                <div className="w-10 h-10 rounded-full bg-neon-pink/20 flex items-center justify-center text-neon-pink group-hover:scale-110 transition-transform">
-                  <Send size={18} />
-                </div>
-                <span className="font-medium text-sm tracking-wide">SETTLE DEBTS</span>
+              <button className="action-btn action-btn-pink" onClick={() => { const d = debts.find((_, i) => i === 0); if (d) handleSettle(d, 0); }}>
+                <div className="action-btn-icon"><Send size={18} /></div>
+                <span>SETTLE DEBT</span>
               </button>
             </div>
 
-            {/* Pending Debts Section */}
+            {/* ── Debts ──────────────────────────────────────────────── */}
             {debts.length > 0 && (
-              <div className="glassmorphism rounded-[32px] p-8 w-full mt-4 border border-white/10">
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                  <User size={20} className="text-neon-pink" /> 
-                  Pending Settlements
-                </h3>
-                <div className="flex flex-col gap-4">
+              <div className="card">
+                <h3 className="section-title"><User size={18} className="text-pink" /> Pending Payments</h3>
+                <div className="debt-list">
                   {debts.map((debt, idx) => {
-                    const isYouDebtor = debt.debtor === pubKey;
-                    const isYouCreditor = debt.creditor === pubKey;
-                    
+                    const isMine = debt.debtor === pubKey;
                     return (
-                      <div key={idx} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold text-white/90">
-                            {isYouDebtor ? "You owe" : shortKey(debt.debtor) + " owes"}
-                          </span>
-                          <span className="text-xs font-mono text-white/50 mt-1 flex items-center gap-1">
-                            {shortKey(debt.debtor)} <ArrowRight size={10} /> {shortKey(debt.creditor)}
-                          </span>
+                      <div key={idx} className="debt-row">
+                        <div>
+                          <p className="debt-who">{isMine ? 'You owe' : `${short(debt.debtor)} owes`}</p>
+                          <p className="debt-route">
+                            {short(debt.debtor)} <ArrowRight size={10} /> {short(debt.creditor)}
+                          </p>
                         </div>
-                        
-                        <div className="flex items-center gap-4">
-                          <span className={`text-lg font-bold ${isYouCreditor ? 'text-neon-cyan' : isYouDebtor ? 'text-neon-pink' : 'text-white'}`}>
+                        <div className="debt-right">
+                          <span className={`debt-amount ${isMine ? 'amount-pink' : 'amount-cyan'}`}>
                             {debt.amount} XLM
                           </span>
-                          {isYouDebtor && (
-                            <button 
-                              onClick={() => handleSettleDebt(debt, idx)}
-                              disabled={settlingDebtId === idx}
-                              className="bg-neon-pink/20 hover:bg-neon-pink/40 text-neon-pink px-4 py-2 rounded-xl text-xs font-bold tracking-wide transition-colors border border-neon-pink/30 disabled:opacity-50"
+                          {isMine && (
+                            <button
+                              className="settle-btn"
+                              disabled={settlingIdx === idx}
+                              onClick={() => handleSettle(debt, idx)}
                             >
-                              {settlingDebtId === idx ? 'SETTLING...' : 'SETTLE'}
+                              {settlingIdx === idx ? <RefreshCw size={12} className="spin" /> : 'SETTLE'}
                             </button>
                           )}
                         </div>
@@ -313,99 +416,128 @@ function App() {
               </div>
             )}
 
-            {/* Elegant Disconnect */}
-            <button 
-              onClick={handleDisconnect}
-              className="mt-6 mx-auto flex items-center gap-2 px-6 py-3 rounded-full hover:bg-white/5 text-white/50 hover:text-white transition-colors duration-300 border border-transparent hover:border-white/10 text-sm font-medium tracking-wide"
-            >
-              <LogOut size={16} />
-              DISCONNECT VAULT
-            </button>
-
-          </div>
-        )}
-
-        {/* ================= ADD EXPENSE MODAL ================= */}
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-[#000428]/80 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
-            <div className="glassmorphism rounded-[32px] p-8 w-full max-w-md relative z-10 border border-white/20 shadow-[0_0_50px_rgba(0,242,254,0.15)] animate-fade-in-up">
-              
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="absolute top-6 right-6 w-8 h-8 bg-white/5 hover:bg-white/10 rounded-full flex items-center justify-center transition-colors border border-white/10"
-              >
-                <X size={16} className="text-white/70" />
-              </button>
-
-              <div className="w-12 h-12 rounded-2xl bg-neon-cyan/20 flex items-center justify-center text-neon-cyan mb-6">
-                 <Plus size={24} />
-              </div>
-
-              <h2 className="text-2xl font-bold mb-2">Add New Expense</h2>
-              <p className="text-white/60 text-sm mb-8">Record a shared expense and the network will calculate who owes whom.</p>
-
-              <form onSubmit={handleAddExpense} className="flex flex-col gap-5">
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-medium text-white/80 uppercase tracking-widest">Description</label>
-                  <input 
-                    type="text" 
-                    value={expenseDesc}
-                    onChange={(e) => setExpenseDesc(e.target.value)}
-                    placeholder="e.g., Team Lunch" 
-                    className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-neon-cyan/50 focus:ring-1 focus:ring-neon-cyan/50 transition-all"
-                    required
-                  />
+            {/* ── Live Event Feed ─────────────────────────────────────── */}
+            <div className="card">
+              <h3 className="section-title">
+                <Radio size={16} className="pulse-dot" /> Live Event Feed
+                <span className="event-count-badge">{liveEvents.length}</span>
+              </h3>
+              {liveEvents.length === 0 ? (
+                <p className="empty-state">
+                  {isContractLive
+                    ? 'Listening for contract events…'
+                    : 'Deploy the contract to see live events. Events from UI actions will appear here.'}
+                </p>
+              ) : (
+                <div className="event-list">
+                  {liveEvents.map((ev) => (
+                    <div key={ev.id} className="event-row">
+                      <span className={`event-type-badge ${ev.type === 'expense_added' ? 'badge-cyan' : 'badge-pink'}`}>
+                        {ev.type === 'expense_added' ? '📥 Distribution' : '✅ Settled'}
+                      </span>
+                      <span className="event-meta">
+                        {ev.meta?.desc || ev.meta?.amount ? `${ev.meta.desc || ''} ${ev.meta.amount ? ev.meta.amount + ' XLM' : ''}` : ev.type}
+                      </span>
+                      <span className="event-time">{ev.time}</span>
+                    </div>
+                  ))}
                 </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-medium text-white/80 uppercase tracking-widest">Amount (XLM)</label>
-                  <input 
-                    type="number" 
-                    step="0.0000001"
-                    value={expenseAmt}
-                    onChange={(e) => setExpenseAmt(e.target.value)}
-                    placeholder="0.00" 
-                    className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-neon-cyan/50 focus:ring-1 focus:ring-neon-cyan/50 transition-all"
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-medium text-white/80 uppercase tracking-widest">Split With (Public Keys)</label>
-                  <textarea 
-                    value={participantsInput}
-                    onChange={(e) => setParticipantsInput(e.target.value)}
-                    placeholder="Enter Stellar public keys separated by commas..." 
-                    className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-neon-cyan/50 focus:ring-1 focus:ring-neon-cyan/50 transition-all min-h-[100px] resize-none"
-                    required
-                  />
-                </div>
-
-                <button 
-                  type="submit"
-                  className="mt-4 w-full bg-gradient-to-r from-neon-cyan to-neon-purple hover:opacity-90 text-black text-sm font-bold py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(0,242,254,0.4)]"
-                >
-                  SPLIT EXPENSE
-                </button>
-              </form>
+              )}
             </div>
+
+            {/* ── Expenses ─────────────────────────────────────────────── */}
+            {expenses.length > 0 && (
+              <div className="card">
+                <h3 className="section-title"><Activity size={16} /> Distributions</h3>
+                <div className="expense-list">
+                  {expenses.map((exp) => (
+                    <div key={exp.id} className="expense-row">
+                      <div>
+                        <p className="expense-desc">{exp.description}</p>
+                        <p className="expense-meta">{exp.participants.length} participants</p>
+                      </div>
+                      <div className="expense-right">
+                        <span className="expense-amount">{exp.amount} XLM</span>
+                        {isContractLive && (
+                          <span className={`onchain-badge ${exp.onChain ? 'badge-green' : 'badge-grey'}`}>
+                            {exp.onChain ? '⛓ On-chain' : '⏳ Local'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Disconnect */}
+            <button className="disconnect-btn" onClick={handleDisconnect}>
+              <LogOut size={15} /> DISCONNECT VAULT
+            </button>
           </div>
         )}
-
       </div>
 
-      <style jsx>{`
-        .animate-fade-in-up {
-          animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
+      {/* ── Wallet Picker Modal ───────────────────────────────────────────── */}
+      {walletModalOpen && (
+        <div className="modal-overlay" onClick={() => setWalletModalOpen(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setWalletModalOpen(false)}><X size={16} /></button>
+            <h2 className="modal-title">Choose Wallet</h2>
+            <p className="modal-sub">Select your Stellar wallet to connect.</p>
+            <div className="wallet-grid">
+              {SUPPORTED_WALLETS.map((w) => (
+                <button key={w.id} className="wallet-option-btn" onClick={() => handleConnect(w.id)}>
+                  <span className="wallet-emoji">{w.emoji}</span>
+                  <span className="wallet-name">{w.name}</span>
+                  <span className="wallet-desc">{w.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Distribute Payment Modal ─────────────────────────────────────────────── */}
+      {expenseModalOpen && (
+        <div className="modal-overlay" onClick={() => setExpenseModalOpen(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setExpenseModalOpen(false)}><X size={16} /></button>
+            <div className="modal-icon-wrap"><Plus size={22} /></div>
+            <h2 className="modal-title">Distribute Payment</h2>
+            <p className="modal-sub">Distribute a payment to multiple receivers. It will be stored on the Stellar blockchain.</p>
+            <form className="expense-form" onSubmit={handleAddExpense}>
+              <div className="form-group">
+                <label className="form-label">Description</label>
+                <input className="form-input" type="text" placeholder="e.g. Team Lunch" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Amount (XLM)</label>
+                <input className="form-input" type="number" step="0.0000001" placeholder="0.00" value={expenseAmt} onChange={(e) => setExpenseAmt(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Total Participants (including you)</label>
+                <input className="form-input" type="number" min="2" max="20" value={participantCount} onChange={(e) => {
+                  const val = parseInt(e.target.value) || 2;
+                  setParticipantCount(val);
+                  setReceiverAddresses(Array(Math.max(1, val - 1)).fill(''));
+                }} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Receiver Wallet Addresses</label>
+                {receiverAddresses.map((addr, idx) => (
+                  <input key={idx} className="form-input" style={{ marginBottom: '8px' }} type="text" placeholder={`Receiver ${idx + 1} Public Key (G...)`} value={addr} onChange={(e) => {
+                    const newArr = [...receiverAddresses];
+                    newArr[idx] = e.target.value.trim();
+                    setReceiverAddresses(newArr);
+                  }} required />
+                ))}
+              </div>
+              <button type="submit" className="form-submit">DISTRIBUTE PAYMENT</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-export default App;

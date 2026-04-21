@@ -23,17 +23,27 @@ export function calculateDebts(expenses) {
   // 1. Calculate net balances for everyone
   expenses.forEach(expense => {
     const totalAmount = parseFloat(expense.amount);
-    const splitAmount = totalAmount / expense.participants.length;
+    
+    // Total participants (N). User + entered receivers.
+    const totalNodes = expense.participants.length;
+    
+    if (totalNodes > 1) {
+      // The amount is divided by N (all participants including the payer)
+      const splitAmount = totalAmount / totalNodes;
 
-    // Credit the payer (they paid the total, but they owe their own split)
-    balances[expense.payer] = (balances[expense.payer] || 0) + (totalAmount - splitAmount);
+      // Identify the N-1 receiver nodes (everyone except the payer)
+      const receivers = expense.participants.filter(p => p !== expense.payer);
 
-    // Debit everyone else (they owe their split)
-    expense.participants.forEach(participant => {
-      if (participant !== expense.payer) {
-        balances[participant] = (balances[participant] || 0) - splitAmount;
-      }
-    });
+      // The payer keeps their share, and owes the rest to the N-1 receivers
+      // Total owed = splitAmount * (N-1)
+      const totalOwedByPayer = splitAmount * receivers.length;
+      balances[expense.payer] = (balances[expense.payer] || 0) - totalOwedByPayer;
+
+      // Credit the N-1 receiver nodes (each gets their splitAmount)
+      receivers.forEach(receiver => {
+        balances[receiver] = (balances[receiver] || 0) + splitAmount;
+      });
+    }
   });
 
   // 2. Separate into debtors and creditors
