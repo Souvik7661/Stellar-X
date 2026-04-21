@@ -27,15 +27,15 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 
 ## 📸 Screenshots
 
-### Landing Page / Wallet Selection
+### Wallet Selection
 > Multi-wallet support — Freighter, xBull, Lobstr, and Albedo available on connect.
 
-![Landing Page](./screenshots/landing_page.png)
+![Wallet Options](./public/wallet_options.png)
 
-### Dashboard / Expense Splitting
-> Main dashboard showing balance, pending payments, and real-time event feed.
+### Transaction Status Tracker
+> Real-time 3-step stepper: Pending → Submitted → Confirmed/Failed
 
-![Dashboard](./screenshots/dashboard.png)
+![Transaction Status](./public/transaction_status.png)
 
 ---
 
