@@ -96,13 +96,26 @@ export const settleDebtOnChain = async (
 
 // ─── Fetch Contract Events ───────────────────────────────────────────────────
 /**
- * Fetch recent Soroban contract events via RPC.
+ * Fetch recent Soroban contract events via RPC with basic caching.
  * Returns an array of normalised event objects.
  */
 export const fetchContractEvents = async (startLedger) => {
   if (!isContractDeployed()) return [];
   try {
-    const ledger = startLedger || (await rpc.getLatestLedger()).sequence - 50;
+    const CACHE_KEY = `splitx_events_${CONTRACT_ID}`;
+    const cachedEventsRaw = localStorage.getItem(CACHE_KEY);
+    const cachedEvents = cachedEventsRaw ? JSON.parse(cachedEventsRaw) : [];
+    
+    // Determine the ledger to start fetching from (either provided, or the highest cached, or recent)
+    let ledger = startLedger;
+    if (!ledger) {
+      if (cachedEvents.length > 0) {
+        ledger = Math.max(...cachedEvents.map(e => e.ledger)) + 1;
+      } else {
+        ledger = (await rpc.getLatestLedger()).sequence - 50;
+      }
+    }
+
     const result = await rpc.getEvents({
       startLedger: ledger,
       filters: [
@@ -114,7 +127,7 @@ export const fetchContractEvents = async (startLedger) => {
       limit: 20,
     });
 
-    return (result.events || []).map((ev) => {
+    const newEvents = (result.events || []).map((ev) => {
       const topicStrings = ev.topic.map((t) => {
         try { return scValToNative(t)?.toString(); } catch { return '?'; }
       });
@@ -124,11 +137,27 @@ export const fetchContractEvents = async (startLedger) => {
         id: ev.id,
         type: `${category}_${action}`,
         ledger: ev.ledger,
-        raw: ev,
+        raw: ev, // might not serialize perfectly if it contains BigInt, but it's okay for our usage
       };
     });
+
+    // Merge new events with cached events
+    const allEvents = [...newEvents, ...cachedEvents];
+    
+    // De-duplicate by ID
+    const uniqueEvents = Array.from(new Map(allEvents.map(item => [item.id, item])).values());
+    
+    // Keep only the 50 most recent events to prevent localStorage overflow
+    const sortedEvents = uniqueEvents.sort((a, b) => b.ledger - a.ledger).slice(0, 50);
+    
+    localStorage.setItem(CACHE_KEY, JSON.stringify(sortedEvents));
+    return sortedEvents;
+
   } catch (e) {
     console.warn('Event fetch failed:', e.message);
-    return [];
+    
+    // Fallback to cache on error
+    const cachedEventsRaw = localStorage.getItem(`splitx_events_${CONTRACT_ID}`);
+    return cachedEventsRaw ? JSON.parse(cachedEventsRaw) : [];
   }
 };

@@ -72,6 +72,7 @@ export default function App() {
 
   // Live events
   const [liveEvents, setLiveEvents] = useState([]);
+  const [isEventsLoading, setIsEventsLoading] = useState(false);
   const pollRef = useRef(null);
   const lastLedgerRef = useRef(null);
 
@@ -96,17 +97,29 @@ export default function App() {
   };
 
   // ─── Event polling ─────────────────────────────────────────────────────────
-  const startPolling = useCallback(() => {
+  const startPolling = useCallback(async () => {
     if (pollRef.current) clearInterval(pollRef.current);
+    
+    // Initial fetch loading state
+    if (isContractLive && liveEvents.length === 0) {
+      setIsEventsLoading(true);
+      const events = await fetchContractEvents(lastLedgerRef.current);
+      events.forEach((ev) => {
+        if (ev.ledger > (lastLedgerRef.current || 0)) lastLedgerRef.current = ev.ledger;
+      });
+      setLiveEvents(events.map(ev => ({ id: ev.id, type: ev.type, meta: ev.raw, time: new Date().toLocaleTimeString() })).slice(0, 12));
+      setIsEventsLoading(false);
+    }
+
     pollRef.current = setInterval(async () => {
       if (!isContractLive) return;
       const events = await fetchContractEvents(lastLedgerRef.current);
       events.forEach((ev) => {
         if (ev.ledger > (lastLedgerRef.current || 0)) lastLedgerRef.current = ev.ledger;
-        pushEvent(ev.type, ev);
+        pushEvent(ev.type, ev.raw);
       });
     }, 10_000);
-  }, []);
+  }, [liveEvents.length]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -422,7 +435,11 @@ export default function App() {
                 <Radio size={16} className="pulse-dot" /> Live Event Feed
                 <span className="event-count-badge">{liveEvents.length}</span>
               </h3>
-              {liveEvents.length === 0 ? (
+              {isEventsLoading ? (
+                <div className="empty-state" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <RefreshCw size={16} className="spin" /> Loading historical events...
+                </div>
+              ) : liveEvents.length === 0 ? (
                 <p className="empty-state">
                   {isContractLive
                     ? 'Listening for contract events…'

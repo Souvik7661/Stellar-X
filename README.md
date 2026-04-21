@@ -203,3 +203,20 @@ fn get_total_paid(env, address: Address) -> i128
 - **GitHub:** https://github.com/Souvik7661/Stellar-X
 - **Stellar Testnet Explorer:** https://stellar.expert/explorer/testnet
 - **Stellar Friendbot:** https://friendbot.stellar.org
+
+---
+
+## 🏆 Orange Belt Deliverables
+
+### Live Demo
+[View Live on Vercel](https://stellar-x-tau.vercel.app/)
+
+### Automated Tests
+> 3 passing unit tests for the core splitEngine (calculating debts, greedy settlement).
+
+![Test Output](./public/test_output.png)
+
+### Demo Video
+> End-to-end recording showcasing wallet connection, distributions, settling, caching, and live events.
+
+[Link to Demo Video (Placeholder)](#)

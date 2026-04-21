@@ -34,14 +34,13 @@ export function calculateDebts(expenses) {
       // Identify the N-1 receiver nodes (everyone except the payer)
       const receivers = expense.participants.filter(p => p !== expense.payer);
 
-      // The payer keeps their share, and owes the rest to the N-1 receivers
-      // Total owed = splitAmount * (N-1)
-      const totalOwedByPayer = splitAmount * receivers.length;
-      balances[expense.payer] = (balances[expense.payer] || 0) - totalOwedByPayer;
+      // The payer paid for everyone else, so they are owed this amount (Creditor: +)
+      const totalOwedToPayer = splitAmount * receivers.length;
+      balances[expense.payer] = (balances[expense.payer] || 0) + totalOwedToPayer;
 
-      // Credit the N-1 receiver nodes (each gets their splitAmount)
+      // Debit the N-1 receiver nodes (each owes their splitAmount) (Debtor: -)
       receivers.forEach(receiver => {
-        balances[receiver] = (balances[receiver] || 0) + splitAmount;
+        balances[receiver] = (balances[receiver] || 0) - splitAmount;
       });
     }
   });
