@@ -34,6 +34,13 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 
 *(Screenshot: wallet picker showing all 4 supported wallet options)*
 
+### Transaction Status Tracking
+> Real-time status tracking for contract calls and XLM payments.
+
+![Transaction Status](./public/screenshot-transaction.png)
+
+*(Screenshot: 3-step transaction stepper showing Pending → Submitted → Confirmed)*
+
 ---
 
 ## 📡 Deployed Contract
@@ -45,12 +52,16 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 | **Explorer** | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/YOUR_CONTRACT_ID_HERE) |
 
 ### Sample Transaction Hash
-> A verified `add_expense` contract call:
+> A verified transaction settling debt on the Horizon network:
 
 ```
-YOUR_TX_HASH_HERE
+07b5a88e7a02c9a936a2cd821a733e8b0b8c66e74b3d395ec1fb02d410d11a76
 ```
-[View on Stellar Expert →](https://stellar.expert/explorer/testnet/tx/YOUR_TX_HASH_HERE)
+[View on Stellar Expert →](https://stellar.expert/explorer/testnet/tx/07b5a88e7a02c9a936a2cd821a733e8b0b8c66e74b3d395ec1fb02d410d11a76)
+
+![Transaction Explorer](./public/screenshot-explorer.png)
+
+*(Screenshot: Stellar Expert showing the successful settlement transaction)*
 
 ---
 
