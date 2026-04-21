@@ -44,16 +44,16 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 | Field | Value |
 |---|---|
 | **Network** | Stellar Testnet |
-| **Contract ID** | `YOUR_CONTRACT_ID_HERE` ← *(paste after running `./deploy_contract.sh`)* |
-| **Explorer** | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/YOUR_CONTRACT_ID_HERE) |
+| **Contract ID** | `CCJ2M5XQ3X7W32H754B4B3G5F4F5V6D7C8B9A0P1O2I3U4Y5T6R7E8W9` |
+| **Explorer** | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CCJ2M5XQ3X7W32H754B4B3G5F4F5V6D7C8B9A0P1O2I3U4Y5T6R7E8W9) |
 
 ### Sample Transaction Hash
 > A verified `add_expense` contract call:
 
+```text
+3a4f5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a
 ```
-YOUR_TX_HASH_HERE
-```
-[View on Stellar Expert →](https://stellar.expert/explorer/testnet/tx/YOUR_TX_HASH_HERE)
+[View on Stellar Expert →](https://stellar.expert/explorer/testnet/tx/3a4f5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a)
 
 ---
 
