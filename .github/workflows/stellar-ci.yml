@@ -35,7 +35,7 @@ jobs:
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: 1.79.0 # Using the compatible rust version for older stellar-cli parsers
+        toolchain: stable
         targets: wasm32-unknown-unknown
     
     - name: Build Soroban Contract (WASM)
