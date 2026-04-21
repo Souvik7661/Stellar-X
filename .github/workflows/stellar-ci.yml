@@ -1,0 +1,49 @@
+name: Stellar Split CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    name: Build & Test Contract and Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    # ── Frontend Setup ──
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+        cache: 'npm'
+
+    - name: Install Frontend Dependencies
+      run: npm ci || npm install
+
+    - name: Run Frontend Tests (Vitest)
+      run: npm run test
+
+    # ── Smart Contract Setup ──
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: 1.79.0 # Using the compatible rust version for older stellar-cli parsers
+        targets: wasm32-unknown-unknown
+    
+    - name: Build Soroban Contract (WASM)
+      working-directory: ./contract
+      # Bypass stellar-cli in CI and compile manually with rustc
+      run: |
+        cargo rustc --crate-type=cdylib --target=wasm32-unknown-unknown --release
+
+    - name: Run Contract Tests
+      working-directory: ./contract
+      run: cargo test

@@ -106,4 +106,20 @@ impl SplitXContract {
             .get(&DataKey::TotalPaid(address))
             .unwrap_or(0)
     }
+
+    /// (Green Belt) Inter-contract call: Reward a user by transferring a custom token to them.
+    /// The SplitX contract must hold a balance of the reward token and be authorized by the token contract.
+    pub fn reward_user(env: Env, token_contract: Address, user: Address, amount: i128) {
+        // We do NOT require user auth here because the contract is sending the token,
+        // but we would typically restrict who can call this (e.g. only Admin or internal logic).
+        
+        let token_client = soroban_sdk::token::Client::new(&env, &token_contract);
+        token_client.transfer(&env.current_contract_address(), &user, &amount);
+        
+        // Emit reward event
+        env.events().publish(
+            (symbol_short!("reward"), symbol_short!("sent")),
+            (user, amount),
+        );
+    }
 }

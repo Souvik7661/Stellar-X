@@ -491,3 +491,23 @@ body {
 /* ── Utils ───────────────────────────────────────────────────────────────── */
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Mobile Responsive (Green Belt) ──────────────────────────────────────── */
+@media (max-width: 480px) {
+  .main-wrap { padding: 16px 12px; }
+  
+  .welcome-title { font-size: 1.6rem; }
+  .wallet-grid { grid-template-columns: 1fr; }
+  
+  .balance-card { padding: 24px 20px; }
+  .balance-amount { font-size: 2.6rem; }
+  
+  .action-row { grid-template-columns: 1fr; }
+  .action-btn { padding: 16px; }
+  
+  .debt-row { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .debt-right { width: 100%; justify-content: space-between; }
+  
+  .modal-box { padding: 24px 20px; }
+  .form-input { font-size: 1rem; /* Prevent iOS zoom */ }
+}
