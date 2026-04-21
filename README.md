@@ -25,6 +25,21 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 
 ---
 
+## ✅ Orange Belt Submission Checklist
+
+| Requirement | Status |
+|---|---|
+| Mini-dApp fully functional | ✅ Complete split and settle workflow |
+| Loading states and progress indicators | ✅ Spinners on balances and event hydration |
+| Basic caching implementation | ✅ `localStorage` cache for Soroban RPC events |
+| Minimum 3 tests passing | ✅ 3 Vitest tests for off-chain debt engine |
+| Demo video recorded | ✅ End-to-end recording (link below) |
+| README complete | ✅ You're reading it! |
+| Live demo link | ✅ [stellar-x-tau.vercel.app](https://stellar-x-tau.vercel.app/) |
+| Screenshot of 3+ tests passing | ✅ Embedded below |
+
+---
+
 ## 📸 Screenshots
 
 ### Wallet Selection
@@ -76,12 +91,12 @@ Stellar Split is a decentralized **payment distribution app** built on the Stell
 - [x] **Transaction status tracker** — 3-step stepper: Pending → Submitted → Confirmed / Failed
 - [x] **Bug fixes**: corrected `BASE_FEE` import, `signTransaction` fee option, network mismatch detection
 
-### 🟠 Level 3 — Orange Belt (upcoming)
-- [ ] User dashboard (total paid, credits, debts summary)
-- [ ] Expense history with filters
-- [ ] Loading states and caching
-- [ ] 3+ unit tests
-- [ ] 1-minute demo video
+### 🟠 Level 3 — Orange Belt ✅
+- [x] Loading states and caching (events and balances)
+- [x] 3+ unit tests (`vitest` for the splitEngine)
+- [x] 1-minute demo video (embedded)
+- [x] Full README documentation
+- [x] Minimum 3+ meaningful commits
 
 ---
 
