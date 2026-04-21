@@ -6,48 +6,45 @@ on:
   pull_request:
     branches: [ "main" ]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build-and-test:
-    name: Build & Test Contract and Frontend
+  frontend-test:
+    name: Frontend Tests
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    # ── Frontend Setup ──
     - name: Set up Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: 18
-        cache: 'npm'
+        node-version: 20
 
-    - name: Install Frontend Dependencies
-      continue-on-error: true
-      run: npm ci || npm install || true
+    - name: Install dependencies
+      run: npm install
 
-    - name: Run Frontend Tests (Vitest)
-      continue-on-error: true
-      run: npm run test || true
+    - name: Run Vitest tests
+      run: npm test
 
-    # ── Smart Contract Setup ──
+  contract-check:
+    name: Smart Contract Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: stable
         targets: wasm32-unknown-unknown
-    
-    - name: Build Soroban Contract (WASM)
-      working-directory: ./contract
-      continue-on-error: true
-      # Bypass stellar-cli in CI and compile manually with rustc
-      run: |
-        cargo check --target=wasm32-unknown-unknown || true
 
-    - name: Run Contract Tests
+    - name: Check contract compiles
       working-directory: ./contract
       continue-on-error: true
-      run: cargo test || true
+      run: cargo check
+
+    - name: Run contract tests
+      working-directory: ./contract
+      continue-on-error: true
+      run: cargo test
